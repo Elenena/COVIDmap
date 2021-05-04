@@ -1,0 +1,63 @@
+---
+title: "COVID Vaccine World Map"
+author: "Elena Civati"
+date: "5/4/2021"
+output: 
+  html_document: 
+    fig_width: 9.5
+    fig_height: 7
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, message = F, warning = F)
+```
+
+
+This interactive map shows available data at `r Sys.Date()` about COVID-19 incidence and vaccination rate across countries.  
+Data are estrapolated from [Our World In Data COVID-19 Dataset](https://github.com/owid/covid-19-data). For each country, I used informations relative to the more recent date for which the total number of vaccinated people was reported, as shown in Table 1.For this reason, **the date to which data refers can be different for each country**.  
+In [this GitHub repo](https://github.com/Elenena/COVIDmap) you can find the code that generates this web page, automatically working with the most up-to-date version of the dataset provided by Our World in Data (usually, it's updated on a daily basis).  
+In the map, you can visualize informations as follows:  
+- Clicking over a circle shows a popup with all the informations, as well as the the date to which they refers.  
+- Circles are colored accordingly to the number of new cases reported for that given day.  
+- The area of circles is proportional to the percentage of people that received at least one dose of COVID-19 vaccine.  
+- The tickness of the border, when shown, is proportional to the percentage of people who completed the vaccination course.  
+
+```{r}
+library(CoordinateCleaner)
+data("countryref")
+download.file("https://covid.ourworldindata.org/data/owid-covid-data.csv", "covid.csv")
+covid<-read.csv("covid.csv")
+library(dplyr)
+covid<-covid %>% select(location, date, new_cases_per_million, people_vaccinated_per_hundred, people_fully_vaccinated_per_hundred) %>% filter(location %in% unique(countryref$name), !is.na(people_vaccinated_per_hundred)) 
+
+recent<-covid %>% group_by(location) %>% summarize(rownumber=which(date==max(date)), date=date[rownumber], new=round(new_cases_per_million[rownumber]/10), vacc=people_vaccinated_per_hundred[rownumber], fully=people_fully_vaccinated_per_hundred[rownumber])
+
+covid<-select(recent, -rownumber)
+
+library(xtable)
+xt<-xtable(covid, caption = "Table 1")
+
+countryref<-countryref %>% filter( type=="country",name %in% covid$location) %>% select(location=name, lng=centroid.lon, lat=centroid.lat)  
+countryref<-group_by(countryref, location) %>% summarize(lng=mean(lng), lat=mean(lat))
+
+data<-merge(covid, countryref)
+data$popup=paste("<strong>",data$location,"</strong>", "<br>", "Date", data$date, "<br>", "Primovaccinated people:", data$vacc, "%", "<br>", "Fully vaccinated people:", data$fully, "%", "<br>", "<em>Incidence:</em>", "<em>",data$new,"</em>","<em>/100000 people/day </em>")
+
+data$col<-ifelse(is.na(data$new),"gray",ifelse(data$new<10, "green", ifelse(data$new>25, "red", "yellow")))
+
+
+library(leaflet)
+map<-leaflet(data, options = leafletOptions(minZoom=1.5)) %>% addTiles() %>% addCircleMarkers(popup=data$popup, radius=sqrt(data$vacc)*4+1, weight = 1+6*data$fully/100, fillColor = data$col) %>% addLegend(colors= c("gray", "green", "yellow", "red"), labels =c("Not available", "< 10 new cases/100000 people", "from 10 to 25 new cases/100000 people", "> 25 cases/100000 people"), title="Daily incidence")
+
+
+map
+
+```
+
+## Data
+
+```{r results="asis"}
+print(xt, type="html", caption.placement="top")
+
+```
+
